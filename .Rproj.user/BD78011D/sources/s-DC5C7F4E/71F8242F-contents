@@ -1,0 +1,834 @@
+---
+title: "1.Hodrick-Prescott"
+author: "Lothar Mateo Rojas Sosa"
+header-includes:
+    - \input{structure.tex}
+    - \usepackage[T1]{fontenc} % Output font encoding for international characters
+    - \usepackage[utf8]{inputenc} % Required for inputting international characters
+    - \usepackage{XCharter} % Use the XCharter font
+    - \usepackage{setspace}\onehalfspacing
+    - \usepackage{tikz}
+    - \def\checkmark{\tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (1,.7) -- (.25,.15) -- cycle;} 
+fontsize: 9pt
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 4
+    number_sections: true
+date: "`r format(Sys.time(), '%d %B %Y')`"
+---
+
+\selectfont
+
+```{r setup, include=FALSE}
+
+
+rm(list = ls())
+
+# ==============================
+# Global Options
+# ==============================
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(fig.align = 'center', out.width = '75%')
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+
+
+# ==============================
+# Libraries
+# ==============================
+
+library(tidyverse)
+library(mFilter)
+library(readxl)
+library(lubridate)
+library(zoo)
+library(stringr)
+library(ggthemes)
+library(neverhpfilter)
+library(scales)
+library(xts)
+library(XLConnect)
+
+
+```
+
+
+```{r data, include=FALSE}
+
+# ===================
+# Data Import
+# ===================
+
+# 1) Data import
+
+BIE <- read_excel("./Data/BIE.xls")
+BANXICO <- read_excel("./Data/pib_mex.xls", sheet = 2)
+marcet <- read_csv("./Data/marcet_v3.csv")
+
+# 2) We remove the NA' data from the banxico data set
+
+BANXICO <- BANXICO %>% 
+          filter( !is.na(quart))
+
+# 3)  We take out the oil sector
+
+BIE <- BIE %>% 
+      mutate( pib_g = pib_av - sector_211 - sector_213 - sector_324, time = as.yearqtr( str_replace_all(time, "/", "-") )) %>% 
+      # We add the log of both PIB 
+      mutate( log_pib = log(pib_av), log_pib_gas = log(pib_g))
+
+
+# ==============================
+# Tendency and Cycle Storage
+# ==============================
+
+# Along the document, we will perform various estimates; we will save those estimates in a tibble
+
+estimates <- tibble(
+              time = BIE$time, 
+              log_pib = BIE$log_pib, 
+              log_pib_gas = BIE$log_pib_gas, 
+              trend_bx = log_pib - c(BANXICO$pib/100,0,0),
+              trend_bx_gas = log_pib_gas - c(BANXICO$pib_gas/100, 0,0) )
+
+estimates <- as.data.frame(estimates)
+
+
+```
+
+
+
+```{r graph, include = FALSE  }
+
+# ==============================
+# Functions
+# ==============================
+
+graph_HP <- function(data, cycle, name, gas = c(FALSE, TRUE)) {
+  
+  # The function graphs the time series of a specific filter method given by cycle and a data set
+  # The cycle must be in log scale
+  
+  # --------------------------------------
+  
+
+  if( gas){
+    title_g = "sin el sector Petrolero"
+  } 
+  else {
+    title_g = ""
+  }
+  
+  
+# ==============================================
+  
+  graph <- data[1:114,] %>% # 1) We remove the last row beacuse Banxico didn't do the estimation with that trimester
+        select(time) %>% 
+        # 2) We calculate the Brecha and add a colum with Banxicos' data
+        mutate( brecha = 100*(cycle[1:114]) , pib_bx = BANXICO$pib) %>% 
+        # 3) We gather the relevant data in one column for ggplot to graph
+        gather( key = method, value = brecha,  c("brecha", "pib_bx")) %>% 
+        # 4) We fix the labels
+        mutate( method = case_when(
+          method == "brecha" ~ paste("HP-", name, sep = "") ,
+          method == "pib_bx" ~ "Banxico"
+        ) ) %>% 
+        # 5) we make the line graph with ggplot: y is the brecha and x is quarterly data
+    
+        ggplot( aes( x = time, y = brecha, color = method) ) + 
+        geom_line() +
+    
+        # 6) We add some aesthetics to the graph
+            # 6.1) Horizontal line at 0
+            geom_hline(yintercept=0, linetype="dashed", color = "black") +
+            
+            #6.2) We set titles ans labels
+    
+             labs(y = "Porcentaje del producto potencial (%)", 
+             x = "", 
+            title = paste("Estimaciones de la Brecha del Producto", title_g, sep = " "), 
+            colour = NULL,
+            subtitle = paste("Filtro de Hodrick-Presscott", name, sep = " ")) +
+    
+            # 6.3) We set the theme
+            theme_light() +
+            theme(plot.title = element_text(face = "bold", colour = "Black", ),
+            legend.title = NULL,
+            legend.position = c(0.19,0.268),
+            legend.background = element_rect(color = "#f0f2ee")) 
+    
+  
+  return(graph)
+  
+}
+
+
+graph_trend <- function(trend, name, gas = c(FALSE, TRUE)){
+  
+  aux <- estimates %>% 
+          select(time, trend_bx_gas, trend_bx )
+  
+  if( gas){
+    title_g = "sin el sector Petrolero"
+    aux <- estimates %>% 
+          mutate( trend_bx = trend_bx_gas)
+  } 
+  else {
+    title_g = ""
+
+  }
+  
+  
+  
+  
+  graph <- aux[1:114,] %>% # 1) We remove the last rows beacuse Banxico didn't do the estimation with that trimester
+        mutate( trend_m = trend[1:114]) %>% 
+        # 3) We gather the relevant data in one column for ggplot to graph
+        gather( key = method, value = trend_plot,  c("trend_m", "trend_bx")) %>% 
+        # 4) We fix the labels
+        mutate( method = case_when(
+          method == "trend_m" ~ paste("HP-", name, sep = "") ,
+          method == "trend_bx" ~ "Banxico"
+        ) ) %>% 
+        # 5) we make the line graph with ggplot: y is the brecha and x is quarterly data
+        ggplot( aes( x = time, y = trend_plot, color = method) ) + 
+        geom_line() +
+    
+        # 6) We add some aesthetics to the graph
+            
+            #6.2) We set titles ans labels
+    
+             labs(y = "Logaritmo Natural de la Tendencia ", 
+             x = "", 
+            title = paste("Estimaciones de la Tendencia del PIB", title_g, sep = " "), 
+            colour = NULL,
+            subtitle = paste("Filtro de Hodrick-Presscott", name, sep = " ")) +
+    
+            # 6.3) We set the theme
+            theme_light() +
+            theme(plot.title = element_text(face = "bold", colour = "Black", ),
+            legend.title = NULL,
+            legend.position = c(0.7,0.268),
+            legend.background = element_rect(color = "#f0f2ee")) 
+    
+  
+  return(graph)
+  
+}
+
+# ==============================================
+  sort_bie <- function(BIE, name){
+      # Exports Clean Data
+      # ----------------------------------
+      
+      book <- loadWorkbook("clean.xlsx")
+      writeWorksheet(book, BIE, sheet = 1)
+      saveWorkbook(book, file = name)
+  }
+
+
+```
+
+
+\clearpage
+
+# Introducción
+
+## Objetivo
+
+El objetivo del presente documento es aproximar las estimaciones de la brecha del producto de BANXICO por medio de diversas versiones del filtro de Hodrick y Prescott (HP) para series de tiempo. El documento se divide de la siguiente forma:
+
+1. Revisión de los datos
+2. Estimación de Filtros
+6. Comparación de Filtros con BANXICO
+
+
+## Brecha del Producto
+
+En nuestro caso, separaremos el logaritmo del PIB mexicano (desestacionalizado a precios de 2013) en dos componentes: ciclo y tendencia.
+
+$$
+\ln( Y_t) = y_t = y_t^C + y_t^T 
+$$
+
+Para el cálculo de la brecha del producto se tomará la diferencia entre el PIB y la tendencia del PIB estimado. Al hacer la transformación logarítmica implica que el componente del ciclo ya representa la proporción del PIB desviada de la tendencia, por lo que el cálculo de la brecha es:
+
+$$
+Brecha_t = 100 \cdot \left( y_t^C \right)
+$$
+
+
+
+## Estimaciones
+
+Para contratastar las estimaciones con BANXICO se realizarán dos estimaciones por filtro:  
+
+1. PIB de México con periodicidad trimestral
+
+2. PIB de México con periodicidad trimestral excluyendo:
+    + Sector 211 - Extracción de petróleo y gas 
+    + Sector 213 - Servicios relacionados con la minería
+    + Sector 324 - Fabricación de productos derivados del petróleo y carbón
+    
+
+
+\clearpage
+
+# Datos
+
+
+## Datos para estimación
+
+El informe utiliza datos del Banco de Información Económica del [\textcolor{blue}{INEGI}](https://www.inegi.org.mx/sistemas/bie/), la consulta fue sobre el PIB-trimestral mexicano a precios constantes (base 2013) desde 1993 ajustado por estacionalidad. A continuación especificamos la selección de Series para el documento:
+
+
+1. Indicadores económicos de conyontura
+        
+2. Producto interno bruto trimestral, base 2013
+          
+3. Series desestacionalizadas de tendencia y ciclo
+              
+4. A precios de 2013
+  - Total
+    + Serie desestacionalizada
+      * Valores absolutos \checkmark
+              
+
+              
+Cabe mencionar que no hay una seperación específica para los sectores 211, 213 y 324 dentro de las series desestacionalizadas. Por lo que como suplemento temporal tomamos las siguientes series no desestacionalizadas para excluir al sector petrolero:
+
+1. Cuentas nacionales
+2. Producto interno bruto trimestral, base 2013
+3. Valores a precios de 2013
+4. Actividades secundarias
+  + 21 Minería 
+    * 211 Extracción de petróleo y gas \checkmark
+    * 213 Servicios relacionados con la minería \checkmark
+  + 31-33 Industrias Manufactureras 
+    * 324 Fabricación de productos derivados del petróleo y del carbón \checkmark
+
+     
+
+## Datos Banxico
+
+Banxico publica en sus informes trimestrales _tablas web_ con las estimaciones de la Brecha de Producto. Para el presente documento, tomamos la _tabla web_ de abril-junio 2021 del siguiente [\textcolor{blue}{link}](https://www.banxico.org.mx/TablasWeb/informes-trimestrales/abril-junio-2021/0623F5AF-55BB-4043-9CE0-E16A21EA357F.html)
+
+
+\clearpage
+
+# Hodrick-Prescott Clásico
+
+## Método
+
+El filtro de Hodrick-Prescott original resuelve el siguiente problema de minimizacion:
+
+$$\arg \min \sum_{t=1}^{T}\left(y_{t}-\hat{y}_{t}\right)^{2}+\lambda \sum_{t=2}^{T-1}\left(\hat{y}_{t+1}-2 \hat{y}_{t}+\hat{y}_{t-1}\right)^{2}$$
+Utilizamos el paquete [\textcolor{blue}{mFilter}](https://cran.r-project.org/web/packages/mFilter/index.html) desarrollado por Mehmet Balcilar para aplicar el filtro.
+
+## Calibración Datos Trimestrales
+
+Para la estimación de datos trimestrales es necesario fijar el parámetro $\lambda \; = \; 1600$ para tener predicciones "razonables". Sin embargo, el valor de  $\lambda$ para estimaciones "razonables" varía por cada país. Para que el parámetro sea consistente con los datos mexicanos, [\textcolor{blue}{Arturo Antón (2008)}](https://drive.google.com/file/d/1KJLy9XEV5o1IlVNzPTmZ2_QvRAgea2rF/view?usp=sharing) ajusta $\lambda$ con el método descrito por Marcet \& Ravn 2004. Antón concluye que el parámetro consistente con México es $\lambda \; = \; 1096$
+
+## Estimación Brecha del Producto
+
+Para la estimación de la Brecha del Producto utilizamos el PIB en valor agregado (i.e con impuestos) con el siguiente código
+
+\vspace{0.2cm}
+
+```{r HP-C, echo = TRUE}
+
+hp_c <- hpfilter(BIE$log_pib,freq=1096,type="lambda")
+
+```
+
+\vspace{0.2cm}
+
+Procedemos a graficar los resultados y a contrastarlos con las estimaciones de Banxico:
+
+\vspace{0.3cm}
+
+
+```{r classic, echo = FALSE}
+
+# =======================
+#  HP Classic 
+# =======================
+
+# 1) We retrieve the cyclical and trend component from the code
+
+cycle <- hp_c$cycle
+trend <- hp_c$trend
+
+#2) We add the cyclical component and trend to the tibble
+
+estimates <- estimates %>% 
+            mutate( cycle_classic = cycle, trend_classic = trend)
+
+# 3) We graph the line trend
+
+graph_HP(BIE,cycle,"Clásico")
+graph_trend(trend, "Clásico")
+
+```
+\vspace{0.3cm}
+
+Notamos que la estimació de Banxico sigue un patrón similar la estimación del filtro de Hodrick y Presscot clásico. No obstante, hay disparidad en la colas de la serie de tiempo. Es importante notar que la disparidad es sustancial en las colas: mientras que la estimación de Banxico indica que la tendencia sigue un crecimiento constante, el filtro clásico indica una caída.
+
+ \clearpage 
+ 
+## Estimación Excluyendo Sector petrolero
+
+Realizamos la misma estimación pero retirando los sectores 211, 213, 324 del log del PIB en valor agregado. Nuevamente utilizamos e código:
+\vspace{0.2cm}
+```{r HP-CG, echo = TRUE}
+
+hp_cg <- hpfilter(BIE$log_pib_gas,freq=1096,type="lambda")
+
+
+```
+\vspace{0.2cm}
+Procedemos a graficar los resultados y a contrastarlos con las estimaciones de Banxico:
+\vspace{0.3cm}
+```{r Graph HP-CG, echo = FALSE}
+
+# =======================
+#  HP Classic without oil
+# =======================
+
+
+# 1) We retrieve the cyclical and trend component from the code
+
+cycle <- hp_cg$cycle
+trend <- hp_cg$trend
+
+
+#2) We add the cyclical component and trend to the tibble
+
+estimates <- estimates %>% 
+            mutate( cycle_classic_gas = cycle, trend_classic_gas = trend)
+
+# 3) We graph the cyclical component
+
+
+graph_HP(BIE,cycle, "Clásico", gas = TRUE)
+graph_trend(trend, "Clásico", gas = TRUE)
+
+```
+
+A diferencia del primer filtro presentado, la estimación sin sector petrolero difiere más de la estimación de Banxico. La diferencia es resultado de utilizar datos no estacionalizados para el sector petrolero.
+
+\clearpage
+
+
+# Hodrick-Prescott Ravn-Uhlig
+
+El método de Ravn-Uhlig nace para poder hacer uso del filtro de Hodrick y Presscott de manera eficiente con datos de distintas periocidades: desde mensual hasta anual.
+
+## Método
+
+El filtro de Hodrick-Prescott modificado de  Ravn-Uhlig utiliza una perspectiva de dominio de frecuencia, la función de transferencia del filtro HP está dada por (King & Rebelo, 1993):
+
+$$h( \frac{\omega}{s} ; \lambda)=\frac{4 \lambda(1-\cos (\frac{\omega}{s}))^{2}}{1+4 \lambda(1-\cos (\frac{\omega}{s}))^{2}}$$
+La frecuencia base del método es trimestral, para especificar otras frecuencias es necesario un ratio $s$ comparado a los datos trimestrales. Utilizamos el paquete [\textcolor{blue}{mFilter}](https://cran.r-project.org/web/packages/mFilter/index.html) desarrollado por Mehmet Balcilar para aplicar el filtro.
+
+## Calibración Datos Trimestrales
+
+Como mencionamos antes, la frecuencia base del método está en datos trimestrales; por lo que fijamos el parametro $s = 1$, donde $s$ es el ratio de la frecuencia de observación en comparación con los datos trimestrales. Por lo que el método de Ravn-Uhlig es equivalente al filtro clásico con datos trimestrales.
+
+
+
+\clearpage
+
+# Hodrick-Prescott Marcet-Ravn
+
+El filtro de Hodrick-Prescott modificado de  Marcet-Ravn muestran que la elección del filtro de Hodrick y Prescott clásico con parámetro $\lambda = 1600$ podría distorsionar los resultados al final de la serie de tiempo y no es consistente entre países. Por ello, proponen reformular el filtro como un problema de minimización restringida.
+
+El método corrige la sensibilidad de los resultados en la parte final del periodo muestra ante la incorporación de nueva información. Banxico indicó que este era el método utilizado en la página 74 del [\textcolor{blue}{Informe sobre la inflación, Abril-Junio 2009}](https://www.banxico.org.mx/publicaciones-y-prensa/informes-trimestrales/%7B21CAA58B-CD06-97F8-17C6-1439E0187161%7D.pdf). Dentro del reporte mencionan dos métodos:
+
+\begin{enumerate}
+    \item Marcet, A.; M. O. Ravn (2004), “The HP-Filter in Cross-Country Comparisons”, CEPR Discussion Paper 4244.\bigskip
+    \item St-Amant, P.; S. van Norden (1997) “Measurement of the Output Gap: A Discussion of Recent Research at the Bank of Canada”, Technical Report No. 79.
+\end{enumerate}
+
+## Rule 1
+
+$$
+\begin{aligned}
+\min _{\left\{y_{t}^{t r}\right\}_{t=1}^{T}} & \sum_{t=1}^{T}\left(y_{t}-y_{t}^{t r}\right)^{2} \quad
+\text { s.t. } \quad  \frac{\sum_{t=2}^{T-1}\left(\left(y_{t+1}^{t r}-y_{t}^{t r}\right)-\left(y_{t}^{t r}-y_{t-1}^{t r}\right)\right)^{2}}{\sum_{t=1}^{T}\left(y_{t}-y_{t}^{t r}\right)^{2}} \leq V
+\end{aligned}
+$$
+
+$V$ puede considerarse como un "valor objetivo" para la variabilidad de la aceleración en la tendencia en relación con la variabilidad del componente cíclico. Primero, observe que si establecemos $V = 0$, el problema anterior da como resultado un componente de tendencia lineal, mientras que dejar que $V$ vaya al infinito implica que la tendencia se vuelve igual a la serie $y_t$
+
+## Equivalencia HP clásico
+
+Si se multiplican ambos lados de la restricción por $\sum_{t=1}^{T}\left(y_{t}-y_{t}^{t r}\right)^{2}$, también resuelve el Lagrangiano del problema de minimización anterior
+$$
+\min _{\left\{y_{t}^{t r}\right\}_{t=1}^{T}}(1-\bar{\lambda} V) \sum_{t=1}^ {T}\left(y_{t}-y_{t}^{t r}\right)^{2}+\bar{\lambda} \sum_{t=2}^{T-1}\left(\left(y_{t+1}^{t r}-y_{t}^{t r}\right)-\left(y_{t}^{t r}-y_{t-1}^{t r}\right) \right)^{2}
+$$
+donde $\bar{\lambda}$ es el multiplicador de Lagrange de la restricción transformada. La solución a este Lagrangiano y el filtro HP son equivalentes si:
+$$
+\lambda=\frac{\bar{\lambda}}{1-\bar{\lambda} V}
+$$
+Si despejamos $V$ entonces:
+$$
+ V = \frac{1}{\bar{\lambda}} -  \frac{1}{\lambda}
+$$
+
+\clearpage
+
+## Calibración Datos Trimestrales
+
+Para la estimaicón de datos trimestrales es necesario imponer $V$. La $V$ elegida está en función de un país "numerario", en nuestro caso (como Marcet & Ravn) __utilizamos a EE.UU__ como el país numerario. 
+
+* La $V$ correspondiente a datos trimestrales equiparable a $\lambda = 1600$ es: $V = 1.81 \times 10^{-4}$.
+
+No obstante, el parámetro $V$ con EE.UU como numerario implica un equivalente al filtro clásico con $\lambda = 1600$. Marcet & Ravn indican una forma para calcular el parámetro $V$ correspondiente a cada país. \bigskip 
+
+Desconocemos el valor del multiplicador $\bar{\lambda}$ que Antón utilizó para calcular $\lambda=1096$. Sin embargo, si es que Antón siguió la metodología de Marcet y Ravn, entonces el filtro de Marcet y Ravn sería equivalente al filtro clásico con $\lambda=1096$.
+
+## Simulación
+
+Para cororborar la intuición de que son equivalentes, realizamos un código propio en Julia. Al realizar la optimización con distintos valores de $V$ con $\lambda = 1096$ y $\bar{\lambda} \leq 1096$ la tendencia era muy similar al filtro clásico.
+
+
+\clearpage
+
+# St. Amant & van Norden
+
+Es el segundo método que Banxico indicó  utilizar en la página 74 del [\textcolor{blue}{Informe sobre la inflación, Abril-Junio 2009}](https://www.banxico.org.mx/publicaciones-y-prensa/informes-trimestrales/%7B21CAA58B-CD06-97F8-17C6-1439E0187161%7D.pdf). \bigskip
+
+El método pretende resolver el problema al final de la muestra añadiendo un término extra al filtro clásico que penaliza desviaciones del cambio de la tendencia con el largo plazo.
+
+
+## Método
+
+El problema de optimización se puede define como:\bigskip
+$$
+\min _{\left\{y_{t}^{t r}\right\}_{t=1}^{T}} \sum_{t=1}^{T}\left(y_{t}-y_{t}^{t r}\right)^{2}+\lambda \sum_{T=1}^{T-1}\left(\left(y_{t+1}^{t r}-y_{t}^{t r}\right)-\left(y_{t}^{t r}-y_{t-1}^{t r}\right)\right)^{2}+\lambda_{s s} \sum_{t=T-j}^{T}\left(\Delta y_{t}^{t r}-u_{s s}\right) .
+$$
+\bigskip
+
+En la expresión anterior, los primeros dos términos son idénticos al problema de minimización del filtro HP estándar. La novedad radica en el último término, donde $u_{s s}$ es una constante (determinada por el investigador) igual a la tasa de crecimiento de la serie en el largo plazo, y $\lambda_{s s} \geq 0$ es el castigo dado a las desviaciones de la tasa de crecimiento de la tendencia con respecto a su valor de largo plazo. \bigskip
+
+$\lambda_{s s}$ permite un suavizamiento de la tendencia en los últimos $j$ periodos de la muestra. En el caso particular $\lambda_{s s}=0$, es posible recuperar el filtro HP estándar. La ventaja de este método es que sólo requiere la especificación de los parámetros $\lambda, u_{s s}$ y $\lambda_{s s}$.
+
+## Calibración datos trimestrales
+
+Antón utilizó la siguiente calibración:
+
+- $\lambda= 109$  para que sea consistente con México. \bigskip
+- Fija $u_{s s}=0.03$, que es la tasa de crecimiento promedio del PIB durante el periodo hasta 2007.\bigskip
+- Menciona que no hay referencias para $\lambda_{ss}$, por lo que fija el parámetro  $\lambda_{ss} = 1096$. \bigskip
+- $j$ son los periodos a tomar en consideración al final de la muestra. Antón no especifica su valor pero supondremos $j=4$ que equivale a 4 timestres o un año dado los datos.
+
+\clearpage
+
+## Estimación Brecha del Producto
+
+Para las estimaciones realizamos un código propio de Julia.
+\vspace{0.5cm}
+```{r, echo = FALSE}
+# ============
+# Marcet Ravn
+# ============
+
+marcet <- read_csv("./Data/marcet_v2.csv")
+
+# Arrange some data
+marcet <- marcet %>% 
+          mutate( time = BIE$time)
+
+# We graph
+
+graph_HP(marcet,marcet$brecha_mr,"St. Amant & van Norden")
+graph_trend(marcet$tendencia_va, "St. Amant & van Norden")
+
+```
+
+\vspace{0.3cm}
+
+
+Desafortunadamente el código de Julia propuesto no pudo replicar las estimaciones de Banxico.  La diferencia puede depender del método numérico; o bien, de los parámetros especificados. Aunque al analizar el problema de optimización, la intención de los filtros HP es realizar una tendencia lineal "suave"; bajo los esquemas propuestos, no es posible que la tendencia tenga un pico tan pronunciado al final de la muestra a menos de que haya un cambio de método.
+
+## Estimación Excluyendo Sector Petrolero
+
+ \vspace{0.5cm}
+```{r, echo = FALSE}
+
+# ============
+# Marcet Ravn without oil
+# ============
+
+# We calculate the cycle
+
+cycle_mg <- marcet$brecha_mr_gas
+
+# We graph
+
+graph_HP(marcet,cycle,"Marcet Ravn", TRUE)
+graph_trend(marcet$tendencia_gas,"Marcet Ravn", gas =  TRUE)
+
+
+    
+```
+
+\clearpage 
+
+
+
+# Hodrick-Prescott Hamilton
+
+Los valores filtrados al final de la muestra son muy diferentes de los del medio y también se caracterizan por una dinámica no confiable. Hamilton propone una regresión de la variable en la fecha $t$ sobre los cuatro valores más recientes en la fecha t $-$ h; menciona que dicha regresión logra todos los objetivos buscados por los usuarios del filtro HP sin ninguno de sus inconvenientes. 
+
+
+## Método
+
+Usando datos económicos trimestrales, Hamilton sugiere un modelo lineal de una serie de tiempo univariante desplazada hacia adelante por $\mathbf{h}$ períodos.  La regresión es formada con variables construidas a partir de  _lags_ de la serie por una cierta cantidad de períodos, p; i.e Un modelo $A R(p)$ autorregresivo modificado, que depende de una anticipación $t+h$. Esto se expresa más específicamente por:
+$$
+\begin{aligned}
+&y_{t+8}=\beta_{0}+\beta_{1} y_{t}+\beta_{2} y_{t-1}+\beta_{3} y_{t-2}+\beta_{4} y_{t-3}+v_{t+8} \\
+&\hat{v}_{t+8}=y_{t+8}+\hat{\beta}_{0}+\hat{\beta}_{1} y_{t}+\hat{\beta}_{2} y_{t-1}+\hat{\beta}_{3} y_{t-2}+\hat{\beta}_{4} y_{t-3}
+\end{aligned}
+$$
+Que se puede reescribir como:
+$$
+\begin{aligned}
+&y_{t}=\beta_{0}+\beta_{1} y_{t-8}+\beta_{2} y_{t-9}+\beta_{3} y_{t-10}+\beta_{4} y_{t-11}+v_{t} \\
+&\hat{v}_{t}=y_{t}-\hat{\beta}_{0}+\hat{\beta}_{1} y_{t-8}+\hat{\beta}_{2} y_{t-9}+\hat{\beta}_{3} y_{t-10}+\hat{\beta}_{4} y_{t-11}
+\end{aligned}
+$$
+
+Independientemente de cómo se hayan generado los datos, siempre que $(1-L)^{d} y_{t}$ sea estacionario en covarianza para algún $d \leq 4$, existe una proyección lineal de población de $y_{t+h} \text { on }\left(y_{t}, y_{t-1}, y_{t-2}, y_{t-3}, 1\right)^{\prime}$
+
+## Calibración Datos Trimestrales
+
+Para series de tiempo de periodicidad trimestral, Hamilton sugiere parámetros de $h=8$ y $p=4$, o un proceso $A R(4)$, adicionalmente retrasado por 8 períodos de anticipación. Se puede explorar variaciones de $h$; sin embargo, $p$ está diseñado para corresponder con la estacionalidad de una periodicidad determinada y debe coincidir en consecuencia.  
+
+\clearpage
+
+## Estimación Brecha del Producto
+
+Para la estimación de la Brecha del Producto utilizamos el PIB en valor agregado (i.e con impuestos) utilizamos el paquete [\textcolor{blue}{neverhpfilter}](https://justinmshea.github.io/neverhpfilter/index.html) desarrollado por Justin M. Shea. En específico  la función `yth_filter`:
+```{r, include=FALSE}
+pib_xts <- xts(BIE$log_pib, order.by = BIE$time)
+```
+
+```{r , echo = TRUE, , warning = FALSE}
+hp_hamilton <- yth_filter( pib_xts, h = 8, p = 4, output = c("cycle", "trend"))
+```
+
+Un incoveniente de método es que al utilizar $h$ periodos en adelante y $p$ rezagos los resultados tendrán $h + p$ datos perdidos o "NA"; por ello, perdemos los datos del Q1 1993 hasta el Q3 DE 1995. Procedemos a graficar los resultados:
+
+```{r , echo = FALSE, , warning = FALSE, out.width= '70%'}
+
+# ====================
+# Hamilton 
+# ====================
+
+cycle <- as.numeric(hp_hamilton$y.cycle)
+
+trend <- as.numeric(hp_hamilton$y.trend)
+#2) We add the cyclical component and trend to the tibble
+
+estimates <- estimates %>% 
+       mutate( cycle_hamilton = cycle, trend_hamilton = trend, cycle_bx = c(BANXICO$pib/100, NA,NA), cycle_bx_gas = c(BANXICO$pib_gas/100, NA,NA) )
+
+# 3) We graph the cyclical component
+
+graph_HP(BIE,hp_hamilton$y.cycle, "Hamilton")
+graph_trend(hp_hamilton$y.trend, "Hamilton")
+
+```
+\vspace{0.3cm}
+Observamos que la dinámica de las dos series es un tanto similar; sin embargo, debido a la pérdida de datos es posible que la estimación no sea adecuada por la escasez de datos de México.
+
+\clearpage
+
+## Estimación Excluyendo Sector Petrolero
+
+Ahora realizamos la estimación para el PIB mexicano sin el sector petrolero. De manera similar, utilizamos el código:
+
+\vspace{0.2cm}
+```{r, include=FALSE}
+pib_xts_gas <- xts(BIE$log_pib_gas, order.by = BIE$time)
+```
+
+```{r , echo = TRUE, , warning = FALSE}
+hp_hamilton_gas <- yth_filter( pib_xts_gas, h = 8, p = 4, output = c("cycle", "trend"))
+
+```
+
+
+\vspace{0.2cm}
+
+Procedemos a graficar los resultados:
+
+\vspace{0.3cm}
+
+```{r , echo = FALSE, , warning = FALSE}
+
+# ====================
+# Hamilton Without Oil
+# ====================
+
+
+#2) We add the cyclical component and trend to the tibble
+
+estimates <- estimates %>% 
+            mutate( cycle_hamilton_gas = as.numeric(hp_hamilton_gas$y.cycle), trend_hamilton_gas = as.numeric(hp_hamilton$y.trend))
+
+# 3) We graph the cyclical component
+
+graph_HP(BIE,hp_hamilton_gas$y.cycle, "Hamilton", gas = TRUE)
+graph_trend(hp_hamilton_gas$y.trend, "Hamilton", gas = TRUE)
+
+estimates <- estimates %>% 
+              mutate( trend_samn = marcet$tendencia_va, trend_samn_gas = marcet$tendencia_gas, 
+                      cycle_samn = marcet$brecha_mr,
+                      cycle_samn_gas = marcet$brecha_mr_gas)
+
+
+sort_bie(estimates, "encargo_1.xlsx")
+
+```
+
+\vspace{0.3cm}
+
+\clearpage
+
+
+# Wrapping Up
+
+En conclusión, destacamos tres puntos importantes:
+
+1. Todos los filtros fueron distintos a las estimaciones de Banxico
+2. Hay un pico pronunciado al final de la muestra en la estimación de Banxico. Dicho pico es imposible con los métodos que dicen utilizar.
+3. La tendencia en la mayoría de los filtros comienza a decrecer post covid. 
+
+
+## Estimaciones con el Sector Petrolero
+
+\vspace{0.2cm}
+
+```{r , echo = FALSE, warning = FALSE}
+
+graph_whole_trend <- function(gas = c(FALSE, TRUE)){
+  
+  if( gas){
+    title_g = "sin el sector Petrolero"
+    var <- c("trend_classic_gas", "trend_bx_gas",  "trend_hamilton_gas", "trend_samn_gas"  )
+    
+  } else {
+    title_g = ""
+    var <- c("trend_classic", "trend_bx",  "trend_hamilton", "trend_samn"  )
+  }
+  
+  
+  estimates[1:114, ] %>% # 1) We remove the last two rows beacuse Banxico's estimation aren't that recent
+        # 2) We gather the relevant data in one column for ggplot to graph
+        gather( key = method, value = brecha,  var) %>% 
+        # 3) We fix the labels
+        mutate( method = case_when(
+          method == var[1] ~ "HP-Clásico" ,
+          method == var[2]  ~ "Banxico",
+          method == var[3] ~ "HP-Hamilton",
+          method == var[4] ~ "HP- St. Amant & van Norden "
+        ) ) %>% 
+        # 5) we make the line graph with ggplot: y is the brecha and x is quarterly data
+    
+        ggplot( aes( x = time, y = brecha, color = method) ) + 
+        geom_line() +
+    
+        # 6) We add some aesthetics to the graph
+            
+            #6.1) We set titles ans labels
+    
+             labs(y = "Porcentaje del producto potencial (%)", 
+             x = "", 
+            title = paste("Estimaciones de la Tendencia del PIB", title_g, sep = " "), 
+            colour = NULL,
+            subtitle = paste("Filtros de Hodrick-Presscott")) +
+    
+            # 6.3) We set the theme
+            theme_light() +
+            theme(plot.title = element_text(face = "bold", colour = "Black", ),
+            legend.title = NULL,
+            legend.position = c(0.7,0.268),
+            legend.background = element_rect(color = "#f0f2ee")) 
+}
+
+graph_whole_cycle <- function(gas = c(FALSE, TRUE)){
+  
+  if( gas){
+    title_g = "sin el sector Petrolero"
+    var <- c("cycle_classic_gas", "cycle_bx_gas",  "cycle_hamilton_gas", "cycle_samn_gas"  )
+    
+  } else {
+    title_g = ""
+    var <- c("cycle_classic", "cycle_bx",  "cycle_hamilton", "cycle_samn"  )
+  }
+  
+  
+  estimates[1:114, ] %>% # 1) We remove the last two rows beacuse Banxico's estimation aren't that recent
+        # 2) We gather the relevant data in one column for ggplot to graph
+        gather( key = method, value = brecha,  var) %>% 
+        # 3) We fix the labels
+        mutate( method = case_when(
+          method == var[1] ~ "HP-Clásico" ,
+          method == var[2]  ~ "Banxico",
+          method == var[3] ~ "HP-Hamilton",
+          method == var[4] ~ "HP-St. Amant & van Norden"
+        ) ) %>% 
+        # 5) we make the line graph with ggplot: y is the brecha and x is quarterly data
+    
+        ggplot( aes( x = time, y = brecha, color = method) ) + 
+        geom_line() +
+    
+        # 6) We add some aesthetics to the graph
+            # 6.1) Horizontal line at 0
+            geom_hline(yintercept=0, linetype="dashed", color = "black") +
+            
+            
+            #6.2) We set titles ans labels
+    
+             labs(y = "Porcentaje del producto potencial (%)", 
+             x = "", 
+            title = paste("Estimaciones de la Tendencia del PIB", title_g, sep = " "), 
+            colour = NULL,
+            subtitle = paste("Filtros de Hodrick-Presscott")) +
+            scale_y_continuous(breaks = seq(-0.25, 0.05 , by = 0.05), labels = percent_format(scale = 100) ) +
+    
+            # 6.3) We set the theme
+            theme_light() +
+            theme(plot.title = element_text(face = "bold", colour = "Black", ),
+            legend.title = NULL,
+            legend.position = c(0.5,0.2),
+            legend.background = element_rect(color = "#f0f2ee")) 
+}
+
+
+
+graph_whole_trend(gas = FALSE)
+
+graph_whole_cycle( gas = FALSE)
+
+  
+
+```
+
+## Estimaciones sin el sector petrolero
+
+\vspace{0.2cm}
+
+```{r , echo = FALSE, warning = FALSE}
+
+graph_whole_trend(gas = FALSE)
+
+graph_whole_cycle( gas = FALSE)
+
+
+```
+
