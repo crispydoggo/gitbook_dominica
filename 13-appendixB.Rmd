@@ -33,8 +33,8 @@ ideal %>%
   pack_rows(aux$indicator[24], 21, 29) %>% 
   pack_rows(aux$indicator[34], 30, 33) %>%
   pack_rows(aux$indicator[39], 34, 40) %>%
-  pack_rows(aux$indicator[47], 41, 49) %>%
-  pack_rows(aux$indicator[57], 50, 56) %>%
+  pack_rows(aux$indicator[47], 41, 58) %>%
+  pack_rows(aux$indicator[66], 59, 69) %>%
   scroll_box(width = "700px", height = "300px")
 
 aux <- ideal_1 %>% 
