@@ -10,7 +10,6 @@ fig:figure6
 fig:figure7
 tab:unnamed-chunk-8
 fig:figure8
-tab:unnamed-chunk-12
 tab:unnamed-chunk-14
 introduction
 section2

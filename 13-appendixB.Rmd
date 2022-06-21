@@ -25,7 +25,7 @@ aux <- ideal_1 %>%
 ideal %>% 
   filter( dimension_id == 1, sub_id != 0) %>% 
   select("I. Institutionalisation Detailed Findings" = `Ideal element/sub-element`, " " = `Main results/findings`) %>% 
-  kbl( caption = "Institutionalisation Elements") %>%
+  kbl( ) %>%
   kable_paper("striped", full_width = F)%>%
   pack_rows(aux$indicator[1], 1, 7) %>%
   pack_rows(aux$indicator[9], 8, 13) %>% 
@@ -42,8 +42,8 @@ aux <- ideal_1 %>%
 
 ideal %>% 
   filter( dimension_id == 2, sub_id != 0) %>% 
-  select("II. Excecution Framework Detailed Findings" = `Ideal element/sub-element`, " " = `Main results/findings`) %>% 
-  kbl( caption = "Excecution Framework Elements") %>%
+  select("II. Execution Framework Detailed Findings" = `Ideal element/sub-element`, " " = `Main results/findings`) %>% 
+  kbl( ) %>%
   kable_paper("striped", full_width = F)%>%
   pack_rows(aux$indicator[1], 1, 5) %>%
   pack_rows(aux$indicator[7], 6, 9) %>% 
@@ -56,8 +56,8 @@ aux <- ideal_1 %>%
 
 ideal %>% 
   filter( dimension_id == 3, sub_id != 0) %>% 
-  select("III. Technical Capabilities Detailed Findings" = `Ideal element/sub-element`, " " = `Main results/findings`) %>% 
-  kbl( caption = "Excecution Framework Elements") %>%
+  select("III. Technical Capabilities Detailed Findings" = `Ideal element/sub-element`, " " = `Main results/findings`) %>%
+  kbl( ) %>%
   kable_paper("striped", full_width = F)%>%
   pack_rows(aux$indicator[1], 1, 4) %>%
   pack_rows(aux$indicator[6], 5, 7) %>% 
@@ -71,7 +71,7 @@ aux <- ideal_1 %>%
 ideal %>% 
   filter( dimension_id == 4, sub_id != 0) %>% 
   select("IV. Use of Evidence Detailed Findings" = `Ideal element/sub-element`, " " = `Main results/findings`) %>% 
-  kbl( caption = "Excecution Framework Elements") %>%
+  kbl() %>%
   kable_paper("striped", full_width = F)%>%
   pack_rows(aux$indicator[1], 1, 5) %>%
   pack_rows(aux$indicator[7], 6, 8) %>% 
