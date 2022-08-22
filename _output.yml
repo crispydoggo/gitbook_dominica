@@ -13,7 +13,8 @@ bookdown::gitbook:
     edit: https://github.com/USERNAME/REPO/edit/BRANCH/%s
     download: no
     sharing:
-      github: yes
+      github: no
       facebook: yes
       twitter: yes
+      all: no
 
