@@ -26,7 +26,7 @@ ideal %>%
   filter( dimension_id == 1, sub_id != 0) %>% 
   select("I. Institutionalisation Detailed Findings" = `Ideal element/sub-element`, " " = `Main results/findings`) %>% 
   kbl( ) %>%
-  kable_paper("striped", full_width = F)%>%
+  kable_paper( "striped", full_width = F)%>%
   pack_rows(aux$indicator[1], 1, 7) %>%
   pack_rows(aux$indicator[9], 8, 13) %>% 
   pack_rows(aux$indicator[16], 14, 20) %>% 
